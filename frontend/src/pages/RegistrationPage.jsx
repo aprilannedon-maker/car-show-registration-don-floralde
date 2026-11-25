@@ -1,126 +1,119 @@
 import { useCallback, useEffect, useState } from "react";
-import { getRegistrations, getSummary } from "../api/sample-data";
+import { getRegistrations, getSummary } from "../api/registrationsApi";
+import { useDebounce } from "../hooks/useDebounce";
 import KpiCards from "../components/KpiCards";
-import Pagination from "../components/Pagination";
 import RegistrationFilters from "../components/RegistrationFilters";
 import RegistrationTable from "../components/RegistrationTable";
-import { useDebounce } from "../hooks/useDebounce";
+import Pagination from "../components/Pagination";
 
 export default function RegistrationPage() {
+  const [registrations, setRegistrations] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [searchInput, setSearchInput] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-
-  const [registrationsData, setRegistrationsData] = useState({
-    items: [],
-    page: 1,
-    pageSize: 10,
-    totalCount: 0,
-    totalPages: 0,
-  });
-  const [summary, setSummary] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [reloadTick, setReloadTick] = useState(0);
 
-  const debouncedName = useDebounce(searchInput, 400);
+  const debouncedSearch = useDebounce(searchInput, 400);
 
-  const handleSearchChange = (value) => {
+  const loadSummary = useCallback(async () => {
+    try {
+      const summaryData = await getSummary();
+      setSummary(summaryData);
+    } catch {
+      // Handled by main error state when API cannot be reached
+    }
+  }, []);
+
+  const loadRegistrations = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await getRegistrations({
+        participantName: debouncedSearch,
+        type: typeFilter,
+        status: statusFilter,
+        page,
+        pageSize,
+      });
+
+      setRegistrations(data.items ?? []);
+      setPage(data.page ?? page);
+      setPageSize(data.pageSize ?? pageSize);
+      setTotalCount(data.totalCount ?? 0);
+      setTotalPages(data.totalPages ?? 0);
+    } catch (err) {
+      setRegistrations([]);
+      setTotalCount(0);
+      setTotalPages(0);
+      setError(
+        err?.message ||
+          "Cannot reach the API. Please make sure the backend server is running and try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch, typeFilter, statusFilter, page, pageSize]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    loadRegistrations();
+  }, [loadRegistrations]);
+
+  function handleSearchChange(value) {
     setSearchInput(value);
     setPage(1);
-  };
+  }
 
-  const handleTypeChange = (value) => {
+  function handleTypeChange(value) {
     setTypeFilter(value);
     setPage(1);
-  };
+  }
 
-  const handleStatusChange = (value) => {
+  function handleStatusChange(value) {
     setStatusFilter(value);
     setPage(1);
-  };
+  }
 
-  const handlePageSizeChange = (newSize) => {
-    setPageSize(newSize);
+  function handlePageSizeChange(newSize) {
+    setPageSize(Number(newSize));
     setPage(1);
-  };
+  }
 
-  const handleClearFilters = useCallback(() => {
+  function handleClearFilters() {
     setSearchInput("");
     setTypeFilter("All");
     setStatusFilter("All");
     setPage(1);
-  }, []);
+  }
 
-  const handleRetry = useCallback(() => {
-    setReloadTick((prev) => prev + 1);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadDashboard() {
-      setIsLoading(true);
-      setError("");
-
-      try {
-        const [listResult, summaryResult] = await Promise.all([
-          getRegistrations({
-            participantName: debouncedName,
-            type: typeFilter,
-            status: statusFilter,
-            page,
-            pageSize,
-          }),
-          getSummary(),
-        ]);
-
-        if (!active) return;
-        setRegistrationsData(listResult);
-        setSummary(summaryResult);
-      } catch (err) {
-        if (!active) return;
-        setError(
-          err?.message || "Cannot reach the API. Please try again later."
-        );
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    loadDashboard();
-
-    return () => {
-      active = false;
-    };
-  }, [debouncedName, typeFilter, statusFilter, page, pageSize, reloadTick]);
+  function handleRetry() {
+    loadSummary();
+    loadRegistrations();
+  }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
-                AutoVista Events • Sorsogon City Coliseum
-              </p>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                Car Show 2027 — Registration Dashboard
-              </h1>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-              Staff Operations View
-            </span>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Autovista Events • Sorsogon City Coliseum
+          </p>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Car Show 2027 — Registration Dashboard
+          </h1>
+        </header>
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
-        <KpiCards summary={summary} isLoading={isLoading && !summary} />
+        <KpiCards summary={summary} />
 
         <RegistrationFilters
           searchInput={searchInput}
@@ -130,27 +123,51 @@ export default function RegistrationPage() {
           statusFilter={statusFilter}
           onStatusChange={handleStatusChange}
           onClearFilters={handleClearFilters}
-          disabled={isLoading}
+          disabled={loading}
         />
 
-        <RegistrationTable
-          items={registrationsData.items}
-          isLoading={isLoading}
-          error={error}
-          onRetry={handleRetry}
-          onClearFilters={handleClearFilters}
-        />
+        {loading ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-600">
+            Loading registrations...
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+            <p className="font-medium text-red-700">{error}</p>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            >
+              Try again
+            </button>
+          </div>
+        ) : registrations.length === 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+            <p className="font-medium text-slate-700">
+              No registrations match your filters
+            </p>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : (
+          <RegistrationTable registrations={registrations} />
+        )}
 
         <Pagination
-          page={registrationsData.page}
-          pageSize={registrationsData.pageSize}
-          totalCount={registrationsData.totalCount}
-          totalPages={registrationsData.totalPages}
+          page={page}
+          pageSize={pageSize}
+          totalCount={totalCount}
+          totalPages={totalPages}
+          disabled={loading || Boolean(error)}
           onPageChange={setPage}
           onPageSizeChange={handlePageSizeChange}
-          disabled={isLoading}
         />
-      </main>
+      </div>
     </div>
   );
 }
